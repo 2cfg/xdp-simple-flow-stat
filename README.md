@@ -21,4 +21,4 @@ unlink /sys/fs/bpf/flowtable
 ip link set dev $iface xdp off
 ```
 
-reference: https://github.com/iovisor/bcc/blob/bc04fc51c9d937253ccac8cafdc2bd0ad4729f73/src/python/bcc/table.py
+reference: https://github.com/iovisor/bcc/blob/master/src/python/bcc/table.py
