@@ -34,7 +34,8 @@ class FlowTable(table.LruHash):
 if __name__ == '__main__':
     
     flowtable = FlowTable(keytype=flow_t, leaftype=counters_t,  max_entries=16777216)
-    
+   
+
     for k, v in flowtable.items():
        
         if k.protocol == 1:
@@ -55,7 +56,6 @@ if __name__ == '__main__':
             v.total_bytes
         ))
 
-#        flowtable.items_update_batch(k, (0, 0))
-
-#    flowtable.clear()
+        # remove after print
+        flowtable.__delitem__(k)
 
