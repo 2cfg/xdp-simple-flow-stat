@@ -6,9 +6,9 @@ class flow_t(ctypes.Structure):
               ("ip_dst", ctypes.c_uint),
               ("src_port", ctypes.c_ushort),
               ("dst_port", ctypes.c_ushort),
+              ("vlan_id", ctypes.c_ushort),
               ("protocol", ctypes.c_ubyte),
               ("fill1", ctypes.c_ubyte),
-              ("fill2", ctypes.c_ushort),
              ]
 
 
@@ -45,7 +45,8 @@ if __name__ == '__main__':
         elif k.protocol == 17:
             proto = "UDP"
 
-        print("{}({}): {}:{}\t=> {}:{}  packets: {}\tbytes: {}".format(
+        print("VLAN {} {}({}): {}:{}\t=> {}:{}  packets: {}\tbytes: {}".format(
+            str(k.vlan_id).rjust(4),
             proto,
             k.protocol,
             str(ip.IPv4Address(k.ip_src)).rjust(15),

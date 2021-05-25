@@ -2,7 +2,7 @@
 
 start: 
 ```
-/usr/bin/ip -force link set dev $iface xdpdrv object xdp_flow_stat_kern.o verbose
+/usr/bin/ip -force link set dev $iface xdpdrv object xdp_flow_stat_kern.o sec xdp/flowstat verbose
 ```
 
 pin map to bpffs: 

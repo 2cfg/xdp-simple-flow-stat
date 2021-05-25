@@ -4,31 +4,36 @@
 #include <linux/in.h>
 #include <uapi/linux/if_ether.h>
 #include <linux/if_packet.h>
+#include <uapi/linux/if_vlan.h>
 #include <uapi/linux/ip.h>
 #include <uapi/linux/udp.h>
 #include <uapi/linux/tcp.h>
 
-#define CONNTRACK_HASH_SIZE     16777216
-
-/* eBPF requires all functions to be inlined */
+#define KBUILD_MODNAME "flowstat"
+#define FLOW_HASH_SIZE     33554432
 #define INTERNAL static __attribute__((always_inline))
+#define VLAN_VID_MASK		0x0fff /* VLAN Identifier */
+//#define LOG(fmt, ...) bpf_printk(fmt "\n", ##__VA_ARGS__)
 
-
-struct Packet {
-    /* For verification to for passing to BPF helpers. */
-    struct xdp_md* ctx;
-
-    /* Layer headers (may be NULL on lower stages) */
-    struct ethhdr* ether;
-    struct iphdr* ip;
+struct vlan_hdr {
+	__be16 h_vlan_TCI;
+	__be16 h_vlan_encapsulated_proto;
 };
 
-// Если протокол ICMP ставим порты 0, 0, protocol = IPPROTO_ICMP
+struct Packet {
+    struct  xdp_md* ctx;
+    struct  ethhdr* ether;
+    struct  iphdr* ip;
+     __u16  vlan_id;
+};
+
+
 struct flow_t {
     __u32    ip_src;
     __u32    ip_dst;
     __u16    src_port;
     __u16    dst_port;
+    __u16    vlan_id;
     __u8     protocol;
 };
 
@@ -42,7 +47,7 @@ struct bpf_map_def SEC("maps") m_flowtable = {
       .type        = BPF_MAP_TYPE_LRU_HASH,
       .key_size    = sizeof(struct flow_t),
       .value_size  = sizeof(struct counters_t),
-      .max_entries = CONNTRACK_HASH_SIZE,
+      .max_entries = FLOW_HASH_SIZE,
       .map_flags   = 0
 };
 
@@ -80,6 +85,7 @@ process_tcp(struct Packet* packet) {
     flow.ip_dst = bpf_ntohl(ip->daddr);
     flow.src_port = bpf_ntohs(tcp->source);
     flow.dst_port = bpf_ntohs(tcp->dest);
+    flow.vlan_id = packet->vlan_id;
     flow.protocol = ip->protocol;
 
     update_stat(packet, flow);
@@ -102,6 +108,7 @@ process_udp(struct Packet* packet) {
     flow.ip_dst = bpf_ntohl(ip->daddr);
     flow.src_port = bpf_ntohs(udp->source);
     flow.dst_port = bpf_ntohs(udp->dest);
+    flow.vlan_id = packet->vlan_id;
     flow.protocol = ip->protocol;
 
     update_stat(packet, flow);
@@ -118,6 +125,7 @@ process_icmp(struct Packet* packet) {
     flow.ip_dst = bpf_ntohl(ip->daddr);
     flow.src_port = 0;
     flow.dst_port = 0;
+    flow.vlan_id = packet->vlan_id;
     flow.protocol = ip->protocol;
 
     update_stat(packet, flow);
@@ -150,28 +158,74 @@ process_ip(struct Packet* packet) {
 INTERNAL int
 process_ether(struct Packet* packet) {
     struct ethhdr* ether = packet->ether;
+    u16 eth_type;
+    u64 offset;
+
+    void *data = (void *)(long)packet->ctx->data;
+    void *data_end = (void *)(long)packet->ctx->data_end;
+
+    packet->vlan_id = 1;
+    offset = sizeof(*ether);
+
+    if ((void *)ether + offset > data_end)
+		return XDP_PASS;
+
+    eth_type = ether->h_proto;
+
+    //LOG("      ETH_TYPE %x", htons(eth_type)); // 0x0800
+    
+	/* Skip non 802.3 Ethertypes */
+	if (unlikely(htons(eth_type) < ETH_P_802_3_MIN))
+		return XDP_PASS;
 
 
-    if (ether->h_proto != bpf_ntohs(ETH_P_IP)) {
-        return XDP_PASS;
+	/* Handle VLAN tagged packet */
+	if (htons(eth_type) == ETH_P_8021Q || htons(eth_type) == ETH_P_8021AD) {
+		struct vlan_hdr *vlan_hdr;
+
+		vlan_hdr = (void *)ether + offset;
+		offset += sizeof(*vlan_hdr);
+		if ((void *)ether + offset > data_end)
+			return XDP_PASS;
+		eth_type = vlan_hdr->h_vlan_encapsulated_proto;
+
+        packet->vlan_id = (bpf_ntohs(vlan_hdr->h_vlan_TCI) & VLAN_VID_MASK);
+	}
+
+    /* Handle double VLAN tagged packet */
+    if (htons(eth_type) == ETH_P_8021Q || htons(eth_type) == ETH_P_8021AD) {
+		struct vlan_hdr *vlan_hdr;
+
+		vlan_hdr = (void *)ether + offset;
+		offset += sizeof(*vlan_hdr);
+        if ((void *)ether + offset > data_end)
+			return XDP_PASS;
+		eth_type = vlan_hdr->h_vlan_encapsulated_proto;
+
+        packet->vlan_id = (bpf_ntohs(vlan_hdr->h_vlan_TCI) & VLAN_VID_MASK);
     }
 
-    struct iphdr* ip = (struct iphdr*)(ether + 1);
-    if ((void*)(ip + 1) > (void*)packet->ctx->data_end) {
+    if (htons(eth_type) != ETH_P_IP) {
+        return XDP_PASS;
+    }
+    
+    struct iphdr* ip = (struct iphdr*)(data + offset);
+    if ((void*)(ip + 1) > data_end) {
         return XDP_PASS; /* malformed packet */
     }
     packet->ip = ip;
+
     return process_ip(packet);
 }
 
-SEC("prog")
+SEC("xdp/flowstat")
 int xdp_main(struct xdp_md* ctx) {
     struct Packet packet;
     packet.ctx = ctx;
 
     struct ethhdr* ether = (struct ethhdr*)(void*)ctx->data;
     if ((void*)(ether + 1) > (void*)ctx->data_end) {
-        return XDP_PASS; /* what are you? */
+        return XDP_PASS;
     }
 
     packet.ether = ether;
