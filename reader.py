@@ -1,5 +1,9 @@
 from bcc import libbcc, table
-import ctypes, ipaddress as ip
+import argparse
+import ctypes
+import ipaddress as ip
+import time
+
 
 class flow_t(ctypes.Structure):
   _fields_ = [("ip_src", ctypes.c_uint),
@@ -19,8 +23,8 @@ class counters_t(ctypes.Structure):
 
 
 class FlowTable(table.LruHash):
-    def __init__(self, keytype, leaftype, max_entries):
-        map_fd = libbcc.lib.bpf_obj_get(ctypes.c_char_p("/sys/fs/bpf/flowtable-out".encode('utf-8')))
+    def __init__(self, keytype, leaftype, max_entries, pinned_map):
+        map_fd = libbcc.lib.bpf_obj_get(ctypes.c_char_p(pinned_map.encode('utf-8')))
         if map_fd < 0:
             raise ValueError("Failed to open eBPF map")
 
@@ -30,11 +34,8 @@ class FlowTable(table.LruHash):
         self.max_entries = max_entries
 
 
+def process_flow(flowtable):
 
-if __name__ == '__main__':
-    
-    flowtable = FlowTable(keytype=flow_t, leaftype=counters_t,  max_entries=33554432)
-   
 
     for k, v in flowtable.items():
        
@@ -45,7 +46,8 @@ if __name__ == '__main__':
         elif k.protocol == 17:
             proto = "UDP"
 
-        print("VLAN {} {}({}): {}:{}\t=> {}:{}  packets: {}\tbytes: {}".format(
+        print("{} VLAN {} {}({}): {}:{}\t=> {}:{}  packets: {}\tbytes: {}".format(
+            str(int(time.time())),
             str(k.vlan_id).rjust(4),
             proto,
             k.protocol,
@@ -60,3 +62,21 @@ if __name__ == '__main__':
         # remove after print
         flowtable.__delitem__(k)
 
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(description='Flowstat')
+    parser.add_argument('-d', '--dir', type=str, help='Traffic direction')
+    args = parser.parse_args()
+
+    if args.dir not in ('in', 'out'):
+        print("Error. Wrong direction")
+        exit(1)
+    
+    pinned_map = "/sys/fs/bpf/flowtable-{}".format(args.dir)
+
+    flowtable = FlowTable(keytype=flow_t, leaftype=counters_t,  max_entries=33554432, pinned_map=pinned_map)
+
+    while True:
+        process_flow(flowtable)
+        time.sleep(5)
