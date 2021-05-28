@@ -20,7 +20,7 @@ class counters_t(ctypes.Structure):
 
 class FlowTable(table.LruHash):
     def __init__(self, keytype, leaftype, max_entries):
-        map_fd = libbcc.lib.bpf_obj_get(ctypes.c_char_p("/sys/fs/bpf/flowtable".encode('utf-8')))
+        map_fd = libbcc.lib.bpf_obj_get(ctypes.c_char_p("/sys/fs/bpf/flowtable-out".encode('utf-8')))
         if map_fd < 0:
             raise ValueError("Failed to open eBPF map")
 
@@ -33,7 +33,7 @@ class FlowTable(table.LruHash):
 
 if __name__ == '__main__':
     
-    flowtable = FlowTable(keytype=flow_t, leaftype=counters_t,  max_entries=16777216)
+    flowtable = FlowTable(keytype=flow_t, leaftype=counters_t,  max_entries=33554432)
    
 
     for k, v in flowtable.items():
