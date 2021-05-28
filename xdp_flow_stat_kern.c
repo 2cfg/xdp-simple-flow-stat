@@ -178,7 +178,6 @@ process_ether(struct Packet* packet) {
 	if (unlikely(htons(eth_type) < ETH_P_802_3_MIN))
 		return XDP_PASS;
 
-
 	/* Handle VLAN tagged packet */
 	if (htons(eth_type) == ETH_P_8021Q || htons(eth_type) == ETH_P_8021AD) {
 		struct vlan_hdr *vlan_hdr;
@@ -218,8 +217,22 @@ process_ether(struct Packet* packet) {
     return process_ip(packet);
 }
 
-SEC("xdp/flowstat")
-int xdp_main(struct xdp_md* ctx) {
+SEC("rx/in")
+int track_in(struct xdp_md* ctx) {
+    struct Packet packet;
+    packet.ctx = ctx;
+
+    struct ethhdr* ether = (struct ethhdr*)(void*)ctx->data;
+    if ((void*)(ether + 1) > (void*)ctx->data_end) {
+        return XDP_PASS;
+    }
+
+    packet.ether = ether;
+    return process_ether(&packet);
+}
+
+SEC("rx/out")
+int track_out(struct xdp_md* ctx) {
     struct Packet packet;
     packet.ctx = ctx;
 
