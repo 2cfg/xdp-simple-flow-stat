@@ -3,9 +3,6 @@ import argparse
 import ctypes
 import ipaddress as ip
 import time
-from datetime import datetime
-import psycopg2
-from config import CONNECTION
 
 
 class flow_t(ctypes.Structure):
@@ -37,31 +34,33 @@ class FlowTable(table.LruHash):
         self.max_entries = max_entries
 
 
-def process_flow(flowtable, conn):
+def process_flow(flowtable):
 
-    cursor = conn.cursor()
 
     for k, v in flowtable.items():
-        try:
-            cursor.execute("INSERT INTO statistics (time, vlan_id, proto, saddr, sport, daddr, dport, dsubnet, bytes, packets) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
-                            (datetime.now(),
-                             str(k.vlan_id),
-                             str(k.protocol),
-                             str(ip.IPv4Address(k.ip_src)),
-                             str(k.src_port),
-                             str(ip.IPv4Address(k.ip_dst)),
-                             str(k.dst_port),
-                             str("0.0.0.0/0"),
-                             str(v.total_bytes),
-                             str(v.total_packets)
-                    ))
+       
+        if k.protocol == 1:
+            proto = "ICMP"
+        elif k.protocol == 6:
+            proto = "TCP "
+        elif k.protocol == 17:
+            proto = "UDP"
 
-        except (Exception, psycopg2.Error) as error:
-            print(error)
+        print("{} VLAN {} {}({}): {}:{}\t=> {}:{}  packets: {}\tbytes: {}".format(
+            str(int(time.time())),
+            str(k.vlan_id).rjust(4),
+            proto,
+            k.protocol,
+            str(ip.IPv4Address(k.ip_src)).rjust(15),
+            str(k.src_port).ljust(5),
+            str(ip.IPv4Address(k.ip_dst)).rjust(15),
+            str(k.dst_port).ljust(5),
+            v.total_packets,
+            v.total_bytes
+        ))
 
+        # remove after print
         flowtable.__delitem__(k)
-
-    conn.commit()
 
 
 if __name__ == '__main__':
@@ -79,9 +78,5 @@ if __name__ == '__main__':
     flowtable = FlowTable(keytype=flow_t, leaftype=counters_t,  max_entries=33554432, pinned_map=pinned_map)
 
     while True:
-        
-        with psycopg2.connect(CONNECTION) as conn:
-            process_flow(flowtable, conn)
-        
+        process_flow(flowtable)
         time.sleep(5)
-
