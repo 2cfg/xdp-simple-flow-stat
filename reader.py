@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 import psycopg2
 from config import CONNECTION
-
+import socket
 
 class flow_t(ctypes.Structure):
   _fields_ = [("ip_src", ctypes.c_uint),
@@ -43,9 +43,10 @@ def process_flow(flowtable, conn):
 
     for k, v in flowtable.items():
         try:
-            cursor.execute("INSERT INTO statistics (time, vlan_id, proto, saddr, sport, daddr, dport, dsubnet, bytes, packets) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+            cursor.execute("INSERT INTO statistics (time, vlan_id, filter, proto, saddr, sport, daddr, dport, dsubnet, bytes, packets) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                             (datetime.now(),
                              str(k.vlan_id),
+                             str(socket.gethostname()),
                              str(k.protocol),
                              str(ip.IPv4Address(k.ip_src)),
                              str(k.src_port),
