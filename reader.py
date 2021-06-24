@@ -37,8 +37,9 @@ class FlowTable(table.LruHash):
         self.max_entries = max_entries
 
 
-def process_flow(flowtable, conn):
-
+def process_flow(flowtable, conn, hostname):
+    
+    commit_interval = 200
     cursor = conn.cursor()
 
     for k, v in flowtable.items():
@@ -46,7 +47,7 @@ def process_flow(flowtable, conn):
             cursor.execute("INSERT INTO statistics (time, vlan_id, filter, proto, saddr, sport, daddr, dport, dsubnet, bytes, packets) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                             (datetime.now(),
                              str(k.vlan_id),
-                             str(socket.gethostname()),
+                             str(hostname),
                              str(k.protocol),
                              str(ip.IPv4Address(k.ip_src)),
                              str(k.src_port),
@@ -61,6 +62,10 @@ def process_flow(flowtable, conn):
             print(error)
 
         flowtable.__delitem__(k)
+        commit_interval -= 1
+        if commit_interval < 1:
+            conn.commit()
+            commit_interval = 200
 
     conn.commit()
 
@@ -71,6 +76,7 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--dir', type=str, help='Traffic direction')
     args = parser.parse_args()
 
+
     if args.dir not in ('in', 'out'):
         print("Error. Wrong direction")
         exit(1)
@@ -79,10 +85,12 @@ if __name__ == '__main__':
 
     flowtable = FlowTable(keytype=flow_t, leaftype=counters_t,  max_entries=33554432, pinned_map=pinned_map)
 
+    hostname = socket.gethostname()
+
     while True:
         
         with psycopg2.connect(CONNECTION) as conn:
-            process_flow(flowtable, conn)
+            process_flow(flowtable, conn, hostname)
         
         time.sleep(5)
 
