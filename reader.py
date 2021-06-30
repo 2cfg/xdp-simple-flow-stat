@@ -42,7 +42,9 @@ def process_flow(flowtable, conn, hostname):
     commit_interval = 200
     cursor = conn.cursor()
 
-    for k, v in flowtable.items():
+    while True:
+        k = flowtable.next(key=None)
+        v = flowtable.__getitem__(k)
         try:
             cursor.execute("INSERT INTO statistics (time, vlan_id, filter, proto, saddr, sport, daddr, dport, dsubnet, bytes, packets) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                             (datetime.now(),
@@ -66,6 +68,7 @@ def process_flow(flowtable, conn, hostname):
         if commit_interval < 1:
             conn.commit()
             commit_interval = 200
+            time.sleep(15)
 
     conn.commit()
 
@@ -87,10 +90,6 @@ if __name__ == '__main__':
 
     hostname = socket.gethostname()
 
-    while True:
+    with psycopg2.connect(CONNECTION) as conn:
+        process_flow(flowtable, conn, hostname)
         
-        with psycopg2.connect(CONNECTION) as conn:
-            process_flow(flowtable, conn, hostname)
-        
-        time.sleep(5)
-
