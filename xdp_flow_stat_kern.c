@@ -62,7 +62,7 @@ update_stat(struct Packet* packet, struct flow_t flow) {
 
     if (counter) {
 		__sync_fetch_and_add(&counter->total_bytes, payload_len);
-        __sync_fetch_and_add(&counter->total_packets, 1);
+	        __sync_fetch_and_add(&counter->total_packets, 1);
 	} else {
 		struct counters_t val = {payload_len, 1};
 		bpf_map_update_elem(&m_flowtable, &flow, &val, BPF_ANY);

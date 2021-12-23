@@ -39,18 +39,27 @@ class FlowTable(table.LruHash):
 
 def process_flow(flowtable, conn, hostname):
     
-    commit_interval = 6000
+    commit_interval = 5000
     cursor = conn.cursor()
-
+    commit_counter = 0
     while True:
         k = flowtable.next(key=None)
 
         if k is None:
-            time.sleep(1)
+            time.sleep(5)
             continue
 
         v = flowtable.__getitem__(k)
         try:
+#            print("{}: {}:{}\t=> {}:{}  packets: {}\tbytes: {}".format(
+#                k.protocol,
+#                str(ip.IPv4Address(k.ip_src)).rjust(15),
+#                str(k.src_port).ljust(5),
+#                str(ip.IPv4Address(k.ip_dst)).rjust(15),
+#                str(k.dst_port).ljust(5),
+#                v.total_packets,
+#                v.total_bytes
+#            ))
             cursor.execute("INSERT INTO statistics (time, vlan_id, filter, proto, saddr, sport, daddr, dport, dsubnet, bytes, packets) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                             (datetime.now(),
                              str(k.vlan_id),
@@ -72,7 +81,9 @@ def process_flow(flowtable, conn, hostname):
         commit_interval -= 1
         if commit_interval < 1:
             conn.commit()
-            commit_interval = 6000
+            commit_interval = 5000
+            commit_counter += 1
+            print("{}\tcommit count: {}".format(datetime.now(), commit_counter))
 
     conn.commit()
 
